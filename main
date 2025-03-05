@@ -1,0 +1,1454 @@
+import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_core/firebase_core.dart'; // Importazione senza alias
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
+import 'package:supabase_flutter/supabase_flutter.dart'; // Supabase User
+import 'package:intl/intl.dart';
+import 'cart_page.dart';
+import 'package:uuid/uuid.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+
+class Quantita {
+  final int value;
+
+  Quantita(this.value);
+}
+
+class Ordine {
+  final String id;
+  final String prodotti;
+  final double prezzoPagato;
+  final String orario;
+  final String data;
+  final String nome;
+  final String cognome;
+  final String email;
+
+  Ordine({
+    required this.id,
+    required this.prodotti,
+    required this.prezzoPagato,
+    required this.orario,
+    required this.data,
+    required this.nome,
+    required this.cognome,
+    required this.email,
+  });
+
+  factory Ordine.fromMap(Map<String, dynamic> map) {
+    return Ordine(
+      id: map['id'] as String,
+      prodotti: map['prodotti'] as String,
+      prezzoPagato: (map['prezzo_pagato'] as num).toDouble(),
+      orario: map['orario'] as String,
+      data: map['data'] as String,
+      nome: map['nome'] as String,
+      cognome: map['cognome'] as String,
+      email: map['email'] as String,
+    );
+  }
+}
+
+
+class AuthProvider with ChangeNotifier {
+  final firebase_auth.FirebaseAuth _auth = firebase_auth.FirebaseAuth.instance;
+  firebase_auth.User? _user; // Dichiarazione della variabile _user
+
+  // Costruttore per ascoltare i cambiamenti dell'utente
+  AuthProvider() {
+    _auth.authStateChanges().listen((user) {
+      _user = user; // Aggiorna lo stato dell'utente
+      notifyListeners(); // Notifica i listener dell'aggiornamento
+    });
+  }
+
+  // Metodo per controllare l'utente attualmente autenticato
+  firebase_auth.User? checkCurrentUser() {
+    return _auth.currentUser; // Ritorna l'utente attualmente autenticato
+  }
+
+  // Metodo per il login
+  Future<firebase_auth.UserCredential> signIn({required String email, required String password}) async {
+    final userCredential = await _auth.signInWithEmailAndPassword(email: email, password: password);
+    _user = userCredential.user; // Imposta l'utente corrente
+    notifyListeners(); // Notifica i listener che ci sono state modifiche
+    return userCredential;
+  }
+
+  // Metodo per il logout
+  Future<void> signOut() async {
+    await _auth.signOut();
+    _user = null; // Resetta l'utente
+    notifyListeners();
+  }
+
+
+  firebase_auth.User? get currentUser {
+    return _auth.currentUser; // Restituisce l'utente attuale
+  }
+}
+
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Inizializza Firebase
+  await Firebase.initializeApp();
+
+  // Inizializza Supabase
+  await Supabase.initialize(
+    url: 'https://evkamhhwfhfttlytrbne.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV2a2FtaGh3ZmhmdHRseXRyYm5lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzc4MjE4OTEsImV4cCI6MjA1MzM5Nzg5MX0._weaV1QbFfq70-AbRUPMVd6x4DD9ITeLvIVKlyCCtMA',
+
+
+  );
+
+
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => AuthProvider(),
+      child: MyApp(),
+    ),
+  );
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Mursia Bar',
+      theme: ThemeData(
+        primarySwatch: Colors.orange,  // Cambia il colore primario
+        colorScheme: ColorScheme.fromSwatch(
+          primarySwatch: Colors.amber,  // Colore primario
+          accentColor: Colors.orange,   // Colore secondario
+        ),
+        fontFamily: 'Montserrat',    // Cambia il font
+        textTheme: TextTheme(
+          headlineLarge: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.black), // headline1 diventa headlineLarge
+          bodyLarge: TextStyle(fontSize: 16, color: Colors.grey[800]), // bodyText1 diventa bodyLarge
+        ),
+        buttonTheme: ButtonThemeData(
+          buttonColor: Colors.white,  // Colore dei pulsanti
+          textTheme: ButtonTextTheme.primary,
+        ),
+      ),
+      home: LoginPage(),
+      // Definisci le rotte se necessario
+    );
+  }
+}
+
+
+class LoginPage extends StatefulWidget {
+  @override
+  _LoginPageState createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  final TextEditingController emailController = TextEditingController();
+  final TextEditingController passwordController = TextEditingController();
+  bool isLoading = false;
+
+  Future<void> signIn() async {
+    setState(() {
+      isLoading = true;
+    });
+    try {
+      firebase_auth.UserCredential userCredential = await Provider.of<AuthProvider>(context, listen: false).signIn(
+        email: emailController.text.trim(),
+        password: passwordController.text.trim(),
+      );
+
+      final firebase_auth.User? user = userCredential.user;
+      if (user != null) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => HomePage(user: user)),
+        );
+      }
+    } catch (e) {
+      print("Errore di login: $e");
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Errore di Login'),
+          content: Text(e.toString()),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      // Sfondo teal
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.teal.shade100, Colors.teal.shade700],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Center(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    'Mursia Bar',
+                    style: TextStyle(
+                      fontSize: 36,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.lime.shade900,
+                        shadows: [
+                          Shadow(color: Colors.lime.shade900, offset: Offset(2, 4), blurRadius: 2),
+                          Shadow(color: Colors.yellow, offset: Offset(2, 1), blurRadius: 2)
+                        ]
+                    ),
+                  ),
+                  SizedBox(height: 80),
+                  // Inserisci il logo sotto il titolo
+                  Image.asset(
+                    'assets/logo_mursia.png', // Aggiungi il percorso del tuo logo qui
+                    height: 180,
+                  ),
+                  SizedBox(height: 160),
+                  // TextField per l'email
+                  TextField(
+                    controller: emailController,
+                    decoration: InputDecoration(
+                      labelText: 'Email',
+                      labelStyle: TextStyle(color: Colors.white), // Colore testo
+                      border: OutlineInputBorder(),
+                      enabledBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: Colors.white),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: Colors.white),
+                      ),
+                    ),
+                    style: TextStyle(color: Colors.white),
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+                  SizedBox(height: 20),
+                  // TextField per la password
+                  TextField(
+                    controller: passwordController,
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      labelStyle: TextStyle(color: Colors.white), // Colore testo
+                      border: OutlineInputBorder(),
+                      enabledBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: Colors.white),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderSide: BorderSide(color: Colors.white),
+                      ),
+                    ),
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  SizedBox(height: 20),
+                  // Bottone di login
+                  isLoading
+                      ? CircularProgressIndicator()
+                      : ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      padding: EdgeInsets.symmetric(horizontal: 40, vertical: 15), // Aumenta la dimensione del bottone
+                      backgroundColor: Colors.white, // Colore del bottone
+                      textStyle: TextStyle(fontSize: 18), // Dimensione testo bottone
+                    ),
+                    onPressed: signIn,
+                    child: Text('Login'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+
+class HomePage extends StatefulWidget {
+  final firebase_auth.User? user;
+
+  HomePage({Key? key, this.user}) : super(key: key);
+
+  @override
+  _HomePageState createState() => _HomePageState();
+}
+
+
+
+class _HomePageState extends State<HomePage> {
+  final SupabaseClient supabase = Supabase.instance.client;
+  Future<Map<String, dynamic>>? userDataFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    userDataFuture = getUserData();
+    Provider.of<AuthProvider>(context, listen: false).checkCurrentUser();
+    _loadUserBalance();
+  }
+
+
+  Future<void> _loadUserBalance() async {
+    // Assicurati che l'email dell'utente non sia null prima di procedere
+    if (widget.user?.email != null) {
+      try {
+        // Recupera i dati aggiornati dell'utente dal database
+        final response = await supabase
+            .from('utenti')
+            .select('saldo')
+            .eq('email',
+            widget.user!.email!) // Usa l'operatore non-null assertion (!)
+            .single();
+
+        setState(() {
+          var saldo = response['saldo']
+              .toDouble(); // Aggiorna il saldo dell'utente
+        });
+      } catch (e) {
+        print('Errore nel caricamento del saldo: $e');
+      }
+    } else {
+      print('Errore: L\'email dell\'utente è null');
+    }
+  }
+
+
+  Future<Map<String, dynamic>> getUserData() async {
+    if (widget.user?.email != null) {
+      try {
+        final response = await supabase
+            .from('utenti')
+            .select()
+            .eq('email', widget.user!.email!)
+            .single();
+
+        return response as Map<String, dynamic>;
+      } catch (e) {
+        print('Errore nel recupero dei dati: $e');
+        return {}; // Restituisce una mappa vuota in caso di errore
+      }
+    } else {
+      print('Errore: email dell\'utente non disponibile');
+      return {}; // Restituisce una mappa vuota se l'email è null
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        centerTitle: true,
+        title: Text(
+          "Home Page",
+          style: GoogleFonts.mochiyPopOne(
+            textStyle: TextStyle(
+                color: Colors.amber.shade700, letterSpacing: .5),
+          ),
+        ),
+        backgroundColor: Colors.white70,
+        actions: [
+          IconButton(
+            icon: Icon(Icons.logout),
+            onPressed: () async {
+              await Provider.of<AuthProvider>(context, listen: false).signOut();
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (context) => LoginPage()),
+              );
+            },
+          ),
+          IconButton(
+            icon: Icon(Icons.history),
+            tooltip: 'Storico Ordini',
+            onPressed: () {
+              if (widget.user != null) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        OrderHistoryPage(
+                          userEmail: widget.user!.email!,
+                        ),
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Utente non autenticato')),
+                );
+              }
+            },
+          ),
+        ],
+      ),
+      body: FutureBuilder<Map<String, dynamic>>(
+        future: userDataFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return Center(child: CircularProgressIndicator());
+          } else if (snapshot.hasError) {
+            return Center(child: Text('Errore nel caricamento dei dati'));
+          } else if (snapshot.hasData && snapshot.data!.isNotEmpty) {
+            var saldo = snapshot.data!['saldo'] ?? 0;
+            var nome = snapshot.data!['nome'] ?? 'Utente';
+            return Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.amber.shade100, Colors.amber.shade500],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+              ),
+              child: Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Center(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'Benvenuto, $nome!',
+                          style: GoogleFonts.pacifico(
+                            textStyle: TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black54,
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: 200),
+                        Text(
+                          'Il tuo saldo disponibile è:',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.pacifico(
+                            textStyle: TextStyle(
+                              color: Colors.black87,
+                              fontSize: 24,
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: 40),
+                        Container(
+                          width: 150.0,
+                          height: 150.0,
+                          decoration: BoxDecoration(
+                            color: Colors.amber.shade700,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Text(
+                              '€$saldo',
+                              style: TextStyle(
+                                fontSize: 32.0,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: 200),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            ElevatedButton(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (context) =>
+                                          ProductsPage(user: widget.user)),
+                                );
+                              },
+                              child: Text('Visualizza Prodotti'),
+                              style: ElevatedButton.styleFrom(
+                                padding: EdgeInsets.symmetric(
+                                    vertical: 14.0, horizontal: 16.0),
+                                textStyle: TextStyle(fontSize: 16.0),
+                              ),
+                            ),
+                            ElevatedButton(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (context) =>
+                                          PaymentPage(user: widget.user)),
+                                ).then((value) {
+                                  if (value == true) {
+                                    _loadUserBalance(); // Ricarica il saldo se torna con true
+                                  }
+                                });
+                              },
+                              child: Text('Invia Pagamento'),
+                              style: ElevatedButton.styleFrom(
+                                padding: EdgeInsets.symmetric(
+                                    vertical: 14.0, horizontal: 16.0),
+                                textStyle: TextStyle(fontSize: 16.0),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          } else {
+            return Center(child: Text('Nessun dato disponibile'));
+          }
+        },
+      ),
+    );
+  }
+}
+
+
+
+  class ProductsPage extends StatefulWidget {
+
+  final firebase_auth.User? user;
+
+
+  ProductsPage({Key? key, required this.user}) : super(key: key);
+
+  @override
+  _ProductsPageState createState() => _ProductsPageState();
+}
+
+class _ProductsPageState extends State<ProductsPage> with SingleTickerProviderStateMixin {
+  List<Map<String, dynamic>> cartItems = [];
+  List<Map<String, dynamic>> _cart = []; // Carrello
+  double _totalPrice = 0.0; // Prezzo totale dei prodotti nel carrello
+  late firebase_auth.User? user;
+  late TabController _tabController;
+  List<Map<String, dynamic>> originalQuantities = [];
+
+  void _addToCart(Map<String, dynamic> product, int quantitaDaAggiungere) {
+    setState(() {
+      // Verifica se il prodotto è già presente nel carrello
+      Map<String, dynamic> existingProduct = _cart.firstWhere(
+            (item) => item['id'] == product['id'],
+        orElse: () => {}, // Restituisce una mappa vuota
+      );
+
+
+      if (existingProduct.isNotEmpty) {
+        // Il prodotto esiste già nel carrello
+        existingProduct['quantity'] += quantitaDaAggiungere;
+      }else {
+        // Aggiungi il prodotto al carrello se non è già presente
+        _cart.add({
+          'id': product['id'],
+          'name': product['nome'],
+          'price': product['prezzo'],
+          'imageUrl': product['immagine'],
+          'quantity': quantitaDaAggiungere,
+        });
+        _totalPrice += product['prezzo'] * quantitaDaAggiungere;
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('${product['nome']} aggiunto al carrello con quantità: $quantitaDaAggiungere.'),
+    ));
+  }
+
+  // Definisci le tre categorie
+  final List<String> categories = ['Panini', '...da forno', 'Fritti', 'Bevande'];
+
+  @override
+  void initState() {
+    super.initState();
+    user = widget.user;
+    _tabController = TabController(length: categories.length, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  // Funzione per recuperare i prodotti per una specifica categoria
+  Future<List<Map<String, dynamic>>> fetchProducts(String category) async {
+    final supabase = Supabase.instance.client;
+    try {
+      final response = await supabase
+          .from('prodotti')
+          .select()
+          .eq('categoria', category);
+
+      // Controllo se ci sono errori nella risposta
+      if (response is List) {
+        return List<Map<String, dynamic>>.from(response);
+
+      } else {
+        print('Dati non validi: ${response}');
+        return []; // Restituisce una lista vuota se i dati non sono validi
+      }
+    } catch (e) {
+      print('Errore nel recupero dei dati: $e');
+      return []; // Restituisce una lista vuota in caso di errore
+    }
+  }
+
+  // Metodo per aggiungere un prodotto al carrello
+  void addToCart(Map<String, dynamic> product, Quantita quantita) {
+    Quantita quant = quantita;
+    bool productInCart = _cart.any((item) => item['id'] == product['id']);
+      if (productInCart) {
+      // Se il prodotto è già nel carrello, aumenta la quantità
+          setState(() {
+           _cart = _cart.map((item) {
+             if(item['quantity'] == quant.value) {
+               showDialog(
+                 context: context,
+                 builder: (context) => AlertDialog(
+                   title: Text('Quantità insufficiente'),
+                   content: Text(' ${product['nome']} non è più disponibile.'),
+                 ) ,
+               );
+               Container(
+                 color: Colors.black54, // Colore di sovrapposizione semi-trasparente
+                 child: Center(
+                   child: Text(
+                     'Esaurito',
+                     style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                   ),
+                 ),
+               );
+             }
+             if (item['id'] == product['id']) {
+             item['quantity']++;
+             print('${quant.value} , ${item['quantity']}');
+             }
+          return item;
+        }).toList();
+     }
+      );
+
+    } else {
+      // Se non è nel carrello, aggiungilo
+      setState(() {
+        _cart.add({
+          'id': product['id'],
+          'name': product['nome'],
+          'price': product['prezzo'],
+          'imageUrl': product['immagine'],
+          'quantity': 1,
+        });
+      });
+    }
+      // Aggiorna il totale del carrello
+      setState(() {
+          //aggiornaQuantita(quantita);
+        _totalPrice += product['prezzo'];
+      });
+      //print('Quantità dopo: ${quantita.value}');
+
+      // Mostra una notifica per confermare l'aggiunta
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${product['nome']} aggiunto al carrello.'),
+      ));
+    }
+
+
+
+  // Metodo per mostrare il carrello
+  void _showCart(firebase_auth.User? user) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            CartPage(
+              cart: _cart,
+              totalPrice: _totalPrice,
+              onCheckout: (firebase_auth.User? user) => _checkout(user),
+              user: user, // Passa l'oggetto utente
+            ),
+      ),
+    );
+  }
+
+  Future<void> _updateSaldo(firebase_auth.User user, double saldo) async {
+    try {
+
+      print('Aggiornando saldo a: $saldo per l\'utente: ${user.email}');
+
+      final updateSaldoResponse = await Supabase.instance.client
+          .from('utenti')
+          .update({'saldo': saldo})
+          .eq('email', user.email!);
+
+
+      // Controllo se la risposta è null
+      if (updateSaldoResponse == null) {
+        print('La risposta dell\'aggiornamento è null.');
+        return;
+      }
+
+      print('Risposta dell\'aggiornamento: $updateSaldoResponse');
+
+      if (updateSaldoResponse.error != null) {
+        print('Errore durante l\'aggiornamento del saldo: ${updateSaldoResponse.error!.message}');
+        throw updateSaldoResponse.error!;
+      } else {
+        print('Saldo aggiornato con successo per l\'utente: ${user.email}');
+      }
+    } catch (e) {
+      print('Errore durante l\'aggiornamento del saldo: $e');
+    }
+  }
+
+  // Metodo di checkout
+  Future<void> _checkout(firebase_auth.User? user) async {
+    List<String> errorMessages = [];
+
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Utente non autenticato.'),
+      ));
+      return;
+    }
+
+    // Recupera i dati dell'utente (saldo)
+    final userData = await getUserData(user.email!);
+    if (userData == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Errore nel recupero dei dati utente.'),
+      ));
+      return;
+    }
+
+    double userSaldo = (userData['saldo'] is int)
+        ? (userData['saldo'] as int).toDouble()
+        : (userData['saldo'] as double);
+
+    // Verifica che le quantità dei prodotti siano aggiornate
+    for (var item in _cart) {
+      final prodottoResponse = await Supabase.instance.client
+          .from('prodotti')
+          .select('quantità')
+          .eq('id', item['id'])
+          .single();
+
+      if (prodottoResponse == null || prodottoResponse['quantità'] == null) {
+        errorMessages.add('Errore nel recupero del prodotto con id ${item['id']}.');
+        continue;
+      }
+
+      final currentQuantity = prodottoResponse['quantità'] as int;
+      if (currentQuantity < item['quantity']) {
+        errorMessages.add(
+            'Quantità non disponibile per il prodotto ${item['name']}. Disponibili: ${currentQuantity}, richieste: ${item['quantity']}');
+      }
+    }
+
+    // Se ci sono errori, mostra il messaggio e torna alla HomePage
+    if (errorMessages.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(errorMessages.join('\n')),
+      ));
+
+      // Naviga alla homepage
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => HomePage(user: user)),
+
+      );
+
+      return;
+    }
+
+
+    // Verifica che il saldo dell'utente sia sufficiente
+    if (userSaldo < _totalPrice) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Saldo insufficiente per effettuare l\'ordine. Effettua un versamento.'),
+      ));
+
+      // Ritardo di qualche secondo prima di tornare alla homepage
+      Future.delayed(Duration(seconds: 3), () {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => HomePage(user: user)),
+        );
+      });
+      return;
+    }
+
+    // Dedurre il saldo dell'utente
+    userSaldo = userSaldo - _totalPrice;
+    await _updateSaldo(user, userSaldo);
+
+    // Salva l'ordine nella tabella ordini
+    String prodottiJson = jsonEncode(_cart.map((item) => {
+      'name': item['name'],
+      'quantità': item['quantity'],
+      'prezzo €': item['price'],
+    }).toList());
+
+    final newOrder = {
+      'prodotti': prodottiJson,
+      'prezzo_pagato': _totalPrice,
+      'orario': TimeOfDay.now().format(context), // Assicurati di formattare correttamente
+      'data': DateTime.now().toIso8601String().split('T').first, // Solo la data
+      'nome': userData['nome'],
+      'cognome': userData['cognome'],
+      'email': userData['email'],
+    };
+
+    final insertOrderResponse = await Supabase.instance.client.from('ordini').insert(newOrder);
+
+    /*if (insertOrderResponse.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Errore nel salvataggio dell\'ordine: ${insertOrderResponse.error!.message}'),
+      ));
+      return;
+    }*/
+
+    // Aggiorna le quantità dei prodotti nel database
+    for (var item in _cart) {
+      final prodottoResponse = await Supabase.instance.client
+          .from('prodotti')
+          .select('quantità')
+          .eq('id', item['id'])
+          .single();
+
+      final currentQuantity = prodottoResponse['quantità'] as int;
+
+      final updateQuantityResponse = await Supabase.instance.client
+          .from('prodotti')
+          .update({'quantità': currentQuantity - item['quantity']})
+          .eq('id', item['id']);
+
+
+
+      /*if (updateQuantityResponse == null) {
+        errorMessages.add('Errore durante l\'aggiornamento della quantità per ${item['name']} (${item['id']}).');
+      } else if (updateQuantityResponse.error != null) {
+        errorMessages.add('Errore durante l\'aggiornamento della quantità per ${item['name']} (${item['id']}).');
+      }*/
+    }
+
+    // Controlla se ci sono errori accumulati durante l'aggiornamento delle quantità
+    if (errorMessages.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(errorMessages.join('\n')),
+      ));
+    } else {
+      // Se tutto va bene, mostra il messaggio di successo
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Ordine completato con successo!'),
+      ));
+
+      // Pulisci il carrello
+      setState(() {
+        _cart.clear();
+        _totalPrice = 0.0;
+      });
+
+      // Naviga alla homepage dopo aver completato l'ordine
+      Future.delayed(Duration(seconds: 1), () {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (context) => HomePage(user: user)),
+        );
+      });
+    }
+  }
+
+
+
+
+  Future<Map<String, dynamic>?> getUserData(String email) async {
+    final supabase = Supabase.instance.client;
+    try {
+      final response = await supabase
+          .from('utenti')
+          .select()
+          .eq('email', email)
+          .single();
+
+      return response as Map<String, dynamic>;
+    } catch (e) {
+      print('Errore nel recupero dei dati utente: $e');
+      return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        centerTitle: true,
+        title: Text('Prodotti', style: GoogleFonts.mochiyPopOne(textStyle: TextStyle(color: Colors.amber.shade700, letterSpacing: .5))),
+        backgroundColor: Colors.white70,
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: categories.map((category) => Tab(text: category)).toList(),
+        ),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.shopping_cart),
+            onPressed: () {
+              _showCart(widget.user);
+            },
+
+          ),
+        ],
+      ),
+      body: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.amber.shade100, Colors.amber.shade500],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+              ),
+              child: TabBarView(
+        controller: _tabController,
+        children: categories.map((category) {
+          return FutureBuilder<List<Map<String, dynamic>>>(
+            future: fetchProducts(category),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return Center(child: CircularProgressIndicator());
+              } else if (snapshot.hasError) {
+                return Center(
+                    child: Text('Errore nel caricamento dei prodotti'));
+              } else if (snapshot.hasData && snapshot.data!.isNotEmpty) {
+                final products = snapshot.data!;
+                return GridView.builder(
+                  padding: EdgeInsets.all(10.0),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    childAspectRatio: 3 / 4,
+                    crossAxisSpacing: 10.0,
+                    mainAxisSpacing: 10.0,
+                  ),
+                  itemCount: products.length,
+                  itemBuilder: (context, index) {
+                    final product = products[index];
+                    return ProductCard(
+                      product: product,
+                      user : user,
+                      onAddToCart: (selectedProduct, quantita) {
+                        _addToCart(selectedProduct, quantita);
+                      },
+                    );
+                  },
+                );
+              } else {
+                return Center(child: Text('Nessun prodotto disponibile'));
+              }
+            },
+          );
+        }).toList(),
+      ),
+    ),
+    );
+  }
+}
+
+
+class ProductCard extends StatefulWidget {
+  final firebase_auth.User? user;
+  final Map<String, dynamic> product;
+  final Function(Map<String, dynamic>, int) onAddToCart;
+
+  ProductCard({
+    required this.product,
+    required this.user,
+    required this.onAddToCart,
+  });
+
+  @override
+  _ProductCardState createState() => _ProductCardState();
+}
+
+class _ProductCardState extends State<ProductCard> {
+  int selectedQuantity = 0; // Quantità di prodotti selezionati nel pop-up
+  int availableQuantity = 0; // Quantità disponibile del prodotto
+  int quantityInCart = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    availableQuantity = widget.product['quantità'];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 4.0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Immagine del prodotto
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(10.0)),
+              child: widget.product['immagine'] != null
+                  ? Image.network(
+                widget.product['immagine'],
+                fit: BoxFit.cover,
+              )
+                  : Container(
+                color: Colors.grey[200],
+                child: Icon(Icons.image, size: 50, color: Colors.grey[400]),
+              ),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.all(8.0),
+            child: Text(
+              widget.product['nome'] ?? 'Nome prodotto',
+              style: TextStyle(fontSize: 16.0, fontWeight: FontWeight.bold),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 8.0),
+            child: Text(
+              '€${widget.product['prezzo']?.toStringAsFixed(2) ?? '0.00'}',
+              style: TextStyle(fontSize: 14.0, color: Colors.green[700]),
+            ),
+          ),
+          SizedBox(height: 8.0),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 8.0),
+            child: ElevatedButton(
+              onPressed: () {
+                // Mostra il dialogo dei dettagli del prodotto
+                showDialog(
+                  context: context,
+                  builder: (context) => StatefulBuilder(
+                    builder: (context, setState) {
+                      return AlertDialog(
+                        title: Text(widget.product['nome']),
+                        content: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Image.network(widget.product['immagine']),
+                            //Text(widget.product['descrizione']),
+                            Text('Prezzo: €${widget.product['prezzo']}'),
+                            Text('Disponibilità: ${availableQuantity}'),
+                            SizedBox(height: 10),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                // Bottone per diminuire la quantità
+                                IconButton(
+                                  icon: Icon(Icons.remove),
+                                  onPressed: selectedQuantity > 0
+                                      ? () {
+                                    setState(() {
+                                      selectedQuantity--;
+                                    });
+                                  }
+                                      : null,
+                                ),
+                                // Mostra la quantità selezionata
+                                Text(
+                                  selectedQuantity.toString(),
+                                  style: TextStyle(fontSize: 18.0),
+                                ),
+                                // Bottone per aumentare la quantità
+                                IconButton(
+                                  icon: Icon(Icons.add),
+                                  onPressed: selectedQuantity < availableQuantity
+                                      ? () {
+                                    setState(() {
+                                      selectedQuantity++;
+                                    });
+                                  }
+                                      : null,
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        actions: [
+                          ElevatedButton(
+                            onPressed: () {
+                              widget.onAddToCart(widget.product, selectedQuantity); // Passa il prodotto e la quantità selezionata
+                              Navigator.of(context).pop(); // Chiude il pop-up
+                            },
+                            child: Text('Aggiungi al carrello'),
+                          ),
+                          ElevatedButton(
+                            onPressed: () {
+                              Navigator.of(context).pop(); // Chiude il pop-up senza fare nulla
+                            },
+                            child: Text('Chiudi'),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                );
+              },
+              child: Text('Dettagli'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                textStyle: TextStyle(fontSize: 12.0),
+              ),
+            ),
+          ),
+          SizedBox(height: 8.0),
+        ],
+      ),
+    );
+  }
+}
+
+class OrderHistoryPage extends StatefulWidget {
+  final String userEmail;
+
+  OrderHistoryPage({required this.userEmail});
+
+  @override
+  _OrderHistoryPageState createState() => _OrderHistoryPageState();
+}
+
+class _OrderHistoryPageState extends State<OrderHistoryPage> {
+  final SupabaseClient supabase = Supabase.instance.client;
+  List<Map<String, dynamic>> orders = [];
+  bool isLoading = true;
+  String errorMessage = '';
+
+  @override
+  void initState() {
+    super.initState();
+    fetchOrderHistory();
+  }
+
+  Future<void> fetchOrderHistory() async {
+    try {
+      final response = await supabase
+          .from('ordini')
+          .select('*')
+          .eq('email', widget.userEmail)
+          .order('created_at', ascending: false)
+          .limit(14);
+
+      /*if (response.hasError) {
+        // Gestione dell'errore
+        print('Errore durante l\'operazione: ${response.error?.message}');
+        return;
+      }*/
+
+      setState(() {
+        orders = List<Map<String, dynamic>>.from(response);
+        isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Errore nel recupero dello storico ordini: $e';
+        isLoading = false;
+      });
+    }
+  }
+
+  List<Map<String, dynamic>> parseProductDetails(String prodotti) {
+    try {
+      List<dynamic> decoded = json.decode(prodotti);
+      return decoded
+          .where((item) => item is Map<String, dynamic> && item.containsKey('name') && item.containsKey('quantità'))
+          .map((item) => {
+        'name': item['name'],
+        'quantità': item['quantità'],
+      })
+          .toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        centerTitle: true,
+        title: Text('Storico Ordini', style: GoogleFonts.mochiyPopOne(textStyle: TextStyle(color: Colors.amber.shade700, letterSpacing: .5))),
+        backgroundColor: Colors.white70,
+      ),
+      body:
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.amber.shade100, Colors.amber.shade500],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+          child:
+            isLoading
+            ? Center(child: CircularProgressIndicator())
+            : errorMessage.isNotEmpty
+            ? Center(child: Text(errorMessage))
+            : orders.isEmpty
+            ? Center(child: Text('Nessun ordine trovato.'))
+            : ListView.builder(
+              itemCount: orders.length,
+              itemBuilder: (context, index) {
+                final order = orders[index];
+                final productDetails = parseProductDetails(order['prodotti']);
+                return Card(
+                  margin: EdgeInsets.all(8.0),
+                  child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                      Text(
+                        'Ordine del: ${order['data']}',
+                        style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16.0),
+                      ),
+                      SizedBox(height: 8.0),
+                      Text(
+                        'Prodotti Acquistati:',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      ...productDetails.map((product) => Text(
+                        '${product['name']} - Quantità: ${product['quantità']}')).toList(),
+                      SizedBox(height: 8.0),
+                      Text(
+                        'Prezzo Pagato: €${order['prezzo_pagato']}',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      SizedBox(height: 8.0),
+                      Text(
+                        'Data: ${order['data']} - Orario: ${order['orario']}',
+                      ),
+                      SizedBox(height: 8.0),
+                  ],
+                ),
+            ),
+          );
+        },
+      ),
+    ),
+    );
+  }
+}
+
+class PaymentPage extends StatefulWidget {
+  final firebase_auth.User? user;
+
+  PaymentPage({Key? key, this.user}) : super(key: key);
+
+  @override
+  _PaymentPageState createState() => _PaymentPageState();
+}
+
+class _PaymentPageState extends State<PaymentPage> {
+  final SupabaseClient supabase = Supabase.instance.client;
+  double amount = 0.0;
+  double userBalance = 0.0;
+  String nome = "";
+  String cognome = "";
+  String classe = "";
+  String? qrCode;
+
+  @override
+  void initState() {
+    super.initState();
+    _getUserData();
+  }
+
+  Future<void> _getUserData() async {
+    if (widget.user?.email != null) {
+      try {
+        final response = await supabase
+            .from('utenti')
+            .select('*')
+            .eq('email', widget.user!.email!)
+            .single();
+
+        setState(() {
+          userBalance = response['saldo'].toDouble() ?? 0.0;
+          nome = response['nome'];
+          cognome = response['cognome'];
+          classe = response['classe'];
+        });
+      } catch (e) {
+        print('Errore nel recupero dei dati: $e');
+      }
+    }
+  }
+
+  void _incrementAmount() {
+    if (amount + 0.5 <= userBalance) {
+      setState(() {
+        amount += 0.5;
+      });
+    }
+  }
+
+  void _decrementAmount() {
+    if (amount - 0.5 >= 0) {
+      setState(() {
+        amount -= 0.5;
+      });
+    }
+  }
+
+  Future<void> _generateQRCode() async {
+    if (amount > 0) {
+      String generatedQR = Uuid().v4();
+
+      try {
+        await supabase.from('qrcodes').insert({
+          'qr_code': generatedQR,
+          'amount': amount,
+          'email_utente': widget.user!.email,
+          'nome': nome,
+          'cognome': cognome,
+          'classe': classe,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+
+        setState(() {
+          qrCode = generatedQR;
+        });
+
+        _showQRCodeDialog(generatedQR);
+      } catch (e) {
+        print("Errore nella generazione del QR Code: $e");
+      }
+    }
+  }
+
+  void _showQRCodeDialog(String qrData) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text("QR Code per €${amount.toStringAsFixed(2)}"),
+        content: SizedBox(
+          width: 200,
+          height: 200,
+          child: QrImageView(
+            data: qrData,
+            version: QrVersions.auto,
+            size: 200.0,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await _deleteQRCode(qrData);
+              setState(() {
+                qrCode = null;
+              });
+              Navigator.of(context).pop(); // Torna alla pagina di pagamento
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(builder: (context) => HomePage(user: widget.user)),
+              ); // Torna alla HomePage
+            },
+            child: Text("Elimina QR"),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop(); // Chiude la finestra del QR
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(builder: (context) => HomePage(user: widget.user)),
+              ); // Torna alla HomePage
+            },
+            child: Text("Chiudi"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteQRCode(String qrData) async {
+    await supabase.from('qrcodes').delete().eq('qr_code', qrData);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        centerTitle: true,
+        title: Text(
+          'Invia Pagamento',
+          style: GoogleFonts.mochiyPopOne(
+            textStyle: TextStyle(color: Colors.amber.shade700, letterSpacing: .5),
+          ),
+        ),
+        backgroundColor: Colors.white70,
+      ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.amber.shade100, Colors.amber.shade500],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              Text(
+                'Importo: €${amount.toStringAsFixed(2)}',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.brown.shade800),
+              ),
+              SizedBox(height: 40),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  ElevatedButton(
+                    onPressed: _decrementAmount,
+                    child: Text('-0.50€', style: TextStyle(fontSize: 18, color: Colors.brown.shade800)),
+                  ),
+                  ElevatedButton(
+                    onPressed: _incrementAmount,
+                    child: Text('+0.50€', style: TextStyle(fontSize: 18, color: Colors.brown.shade800)),
+                  ),
+                ],
+              ),
+              SizedBox(height: 50),
+              ElevatedButton(
+                onPressed: _generateQRCode,
+                child: Text('Genera QR Code', style: TextStyle(fontSize: 20, color: Colors.brown.shade800)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+
+
+
