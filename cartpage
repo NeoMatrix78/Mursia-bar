@@ -1,0 +1,87 @@
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+class CartPage extends StatelessWidget {
+final List<Map<String, dynamic>> cart;
+final double totalPrice;
+final void Function(User?) onCheckout;
+final User? user;
+
+CartPage({
+  required this.cart,
+  required this.totalPrice,
+  required this.onCheckout,
+  required this.user,
+});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Il tuo carrello', style: GoogleFonts.mochiyPopOne(textStyle: TextStyle(color: Colors.amber.shade700, letterSpacing: .5))),
+      ),
+      body: cart.isEmpty
+          ? Center(
+        child: Text('Il tuo carrello è vuoto.'),
+      )
+          : Column(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              itemCount: cart.length,
+              itemBuilder: (context, index) {
+                final item = cart[index];
+                return ListTile(
+                  leading: Image.network(
+                    item['imageUrl'] ?? 'https://via.placeholder.com/50',
+                    width: 50,
+                    height: 50,
+                    fit: BoxFit.cover,
+                  ),
+                  title: Text(item['name']),
+                  subtitle: Text('Quantità: ${item['quantity']}'),
+                  trailing: Text(
+                      '€${(item['price'] * item['quantity']).toStringAsFixed(
+                          2)}'),
+                );
+              },
+            ),
+          ),
+          Divider(),
+          Padding(
+            padding: EdgeInsets.all(16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Totale:',
+                  style: TextStyle(fontSize: 20.0, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  '€${totalPrice.toStringAsFixed(2)}',
+                  style: TextStyle(fontSize: 20.0, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            child: ElevatedButton(
+              onPressed: () {
+                onCheckout(user); // Chiama la funzione qui
+              },
+              child: Text('Paga'), // Fornisci un widget come child
+              style: ElevatedButton.styleFrom(
+                padding: EdgeInsets.symmetric(vertical: 16.0),
+                textStyle: TextStyle(fontSize: 18.0),
+                minimumSize: Size(
+                    double.infinity, 50), // Pulsante a tutta larghezza
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
